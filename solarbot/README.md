@@ -104,14 +104,42 @@ a licensing decision. A 4.4 port would also need real rework: 4.4 moved the
 logo, title, favicon and palette into a runtime white-labeling service
 (gated by the license plan there), so the 4.3 commits conflict.
 
-### Pushing with GITHUB_TOKEN
+### Push credential
 
-`GITHUB_TOKEN` cannot push commits that create or change workflow files.
-That is why version branches carry none. If the push of a new port is
-refused because upstream's own history in that release changed its
-workflows, create a fine-grained token (this repository only, Contents and
-Workflows read/write) and store it as the secret `SOLARBOT_PUSH_TOKEN`; the
-port job uses it when present.
+`GITHUB_TOKEN` cannot push commits that create or change workflow files, and
+the history of an upstream release contains such commits, so the port job
+(only its branch push; tags and API calls stay on `GITHUB_TOKEN`) uses, first
+that is set:
+
+1. `SOLARBOT_PUSH_KEY`: private key of the repository deploy key
+   **id 165366360, "solarbot-weekly push (Actions, deploy key, write)"**. The
+   push goes over SSH to `git@github.com:solarbotdev/thingsboard.git`, which
+   is not subject to the workflows-permission rule. The key is written to a
+   0600 file in `$RUNNER_TEMP`, host keys are pinned from
+   `api.github.com/meta` (`StrictHostKeyChecking=yes`), and the file is
+   shredded when the step ends (`solarbot/push-auth.sh`).
+2. `SOLARBOT_PUSH_TOKEN`: a fine-grained token (this repository, Contents and
+   Workflows read/write), over HTTPS.
+3. `GITHUB_TOKEN`: works only for releases whose new history touches no
+   workflow file; otherwise the push is refused and the step summary says so.
+
+Test it without planning or building:
+`gh workflow run solarbot-weekly.yml -R solarbotdev/thingsboard -f push_test=true`.
+The `pushtest` job pushes `solarbot/pushkey-test` (an upstream tag with
+workflow commits absent from the remote), first with `GITHUB_TOKEN` to show
+the refusal, then with the configured credential, and deletes the branch.
+
+Rotate the deploy key:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C solarbot-weekly -f newkey
+gh api repos/solarbotdev/thingsboard/keys -f title='solarbot-weekly push (Actions, deploy key, write)' \
+  -f key="$(cat newkey.pub)" -F read_only=false
+gh secret set SOLARBOT_PUSH_KEY -R solarbotdev/thingsboard < newkey
+gh workflow run solarbot-weekly.yml -R solarbotdev/thingsboard -f push_test=true   # verify
+gh api -X DELETE repos/solarbotdev/thingsboard/keys/165366360                      # old key
+shred -u newkey newkey.pub
+```
 
 ## Hand-fixing a port
 

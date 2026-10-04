@@ -230,6 +230,16 @@ jobs:
           [ -n "$cand" ] || die "no candidate tag has workflow commits absent from origin"
           echo "test tag ${cand}: $(git rev-list --count "${cand}" --not --remotes=origin) commit(s) to push"
 
+          # GitHub refuses a GitHub App token only when the pushed commits
+          # create or change a workflow file relative to what it knows; an
+          # upstream tag alone may not trigger that. Put one commit on top
+          # that adds a workflow file (workflow_dispatch only, never runs).
+          git checkout -q --detach "${cand}^{commit}"
+          mkdir -p .github/workflows
+          printf 'name: pushkey-test (never runs)\non: workflow_dispatch\njobs:\n  noop:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: "true"\n' > .github/workflows/pushkey-test.yml
+          git add .github/workflows/pushkey-test.yml
+          git commit -q -m "pushkey-test: workflow file (throwaway)"
+
           if git ls-remote --exit-code origin "refs/heads/${TEST_BRANCH}" >/dev/null 2>&1; then
             die "${TEST_BRANCH} already exists on origin; remove it first"
           fi
@@ -237,16 +247,16 @@ jobs:
           # Contrast: GITHUB_TOKEN over HTTPS is expected to be refused.
           echo "--- contrast: HTTPS with GITHUB_TOKEN (expected: refused) ---"
           git push "https://x-access-token:${GH_CONTRAST_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            "refs/tags/${cand}:refs/heads/${TEST_BRANCH}" || echo "(refused, as expected)"
+            "HEAD:refs/heads/${TEST_BRANCH}" || echo "(refused, as expected)"
           if git ls-remote --exit-code origin "refs/heads/${TEST_BRANCH}" >/dev/null 2>&1; then
             echo "::warning::GITHUB_TOKEN push was NOT refused; removing the branch before the real test"
             git push origin --delete "${TEST_BRANCH}"
           fi
 
           echo "--- push with the configured credential (${PUSH_MODE}) ---"
-          git push origin "refs/tags/${cand}:refs/heads/${TEST_BRANCH}" \
+          git push origin "HEAD:refs/heads/${TEST_BRANCH}" \
             || die "push with the ${PUSH_MODE} credential failed"
-          echo "push OK via ${PUSH_MODE}: ${TEST_BRANCH} = $(git rev-parse "${cand}^{commit}") (tag ${cand})" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "push OK via ${PUSH_MODE}: ${TEST_BRANCH} = $(git rev-parse HEAD) (tag ${cand} + one commit adding a workflow file)" | tee -a "$GITHUB_STEP_SUMMARY"
           git push origin --delete "${TEST_BRANCH}" || die "delete of ${TEST_BRANCH} failed"
           echo "deleted ${TEST_BRANCH}" | tee -a "$GITHUB_STEP_SUMMARY"
 
