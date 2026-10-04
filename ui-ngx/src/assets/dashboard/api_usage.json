@@ -11464,7 +11464,7 @@
                                 "buttonType": "stroked",
                                 "showIcon": false,
                                 "icon": "undo",
-                                "buttonColor": "#305680",
+                                "buttonColor": "#231f20",
                                 "buttonBorderColor": "#0000001F",
                                 "customButtonStyle": {
                                     "padding": "0 16px"
