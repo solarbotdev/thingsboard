@@ -6,9 +6,9 @@
 #           non-prerelease, ^v\d+(\.\d+){1,3}$) vs. existing image tags.
 #           Targets: the newest release if newer than every image, and the
 #           newest patch of the line of every solarbot/v* branch, minus what
-#           already has an image. Non-Apache releases (4.4+, BUSL-1.1) are
-#           held back for a human (issue) unless listed in the repository
-#           variable SOLARBOT_ALLOW_NON_APACHE.
+#           already has an image. Only releases whose LICENSE first line
+#           says Apache License are built; others (4.4+, BUSL-1.1) get one
+#           "decision needed" issue and are never built automatically.
 #   port    per target: solarbot/v<tag> from the upstream tag + cherry-pick of
 #           `git rev-list <prev upstream tag>..solarbot/v<prev>` (commits that
 #           only touch .github/ skipped); push the branch. An existing branch
@@ -18,7 +18,7 @@
 #           only after the smoke tests pass.
 #   report  solarbot/weekly.py report: issue per failure (one per version,
 #           updated, never duplicated), "image ready - manual upgrade" for a
-#           new minor/major line, license issue for held-back releases.
+#           new minor/major line, one license issue per non-Apache release.
 #
 # Idempotent: a target with an image is never selected again; a failed one is
 # retried next week (its issue gets a comment).
@@ -61,7 +61,6 @@ jobs:
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          SOLARBOT_ALLOW_NON_APACHE: ${{ vars.SOLARBOT_ALLOW_NON_APACHE }}
         run: python3 solarbot/weekly.py plan
 
   port:

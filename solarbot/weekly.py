@@ -5,9 +5,8 @@
     weekly.py report   -> opens, updates or closes issues from what got built
 
 Environment: GH_TOKEN (the workflow's GITHUB_TOKEN), GITHUB_REPOSITORY,
-GITHUB_SERVER_URL, GITHUB_RUN_ID; for plan also SOLARBOT_ALLOW_NON_APACHE
-(space-separated upstream tags whose non-Apache license a human accepted);
-for report TARGETS and BLOCKED (plan's JSON outputs).
+GITHUB_SERVER_URL, GITHUB_RUN_ID; for report TARGETS and BLOCKED (plan's
+JSON outputs).
 
 Local dry run of plan without GHCR access: SOLARBOT_HAVE_TAGS="4.3.1.4-solarbot.1"
 and SOLARBOT_BRANCHES="solarbot/v4.3.1.4" override what it would read.
@@ -153,7 +152,6 @@ def plan():
         line = [k for k in releases if k[:3] == b[:3]]
         if line and max(line) > b:
             wanted.setdefault(max(line), 'newest patch of the %s line (%s)' % ('.'.join(map(str, b[:3])), branches[b]))
-    allowed = set(os.environ.get('SOLARBOT_ALLOW_NON_APACHE', '').split())
 
     targets, blocked = [], []
     for k in sorted(wanted):
@@ -163,12 +161,12 @@ def plan():
             continue
         # The SolarBot port rebrands the UI. ThingsBoard 4.4+ is BUSL-1.1, whose
         # no-charge production grant requires the ThingsBoard name, logo and
-        # attribution to stay visible and unmodified; such a release is not
-        # built until a human has decided and listed it in the repository
-        # variable SOLARBOT_ALLOW_NON_APACHE.
+        # attribution to stay visible and unmodified. Only releases whose
+        # LICENSE's first line says Apache License are built; anything else
+        # is a human decision (one issue), never automatic.
         lic = upstream_file('LICENSE', tag).lstrip()
-        apache = lic.startswith('Apache License')
-        if not apache and tag not in allowed:
+        apache = 'Apache License' in lic.splitlines()[0]
+        if not apache:
             first = ' '.join(lic.split('\n', 3)[:3]).strip()[:200]
             print('%s: BLOCKED, LICENSE is not Apache-2.0 (%r...)' % (tag, first))
             blocked.append({'tag': tag, 'reason': wanted[k], 'license_head': first})
@@ -188,7 +186,7 @@ def plan():
         t = {'tag': tag, 'version': version, 'branch': 'solarbot/' + tag,
              'prev_branch': pb, 'prev_tag': pb[len('solarbot/'):],
              'image_tag': version + '-solarbot.1', 'minor': minor,
-             'reason': wanted[k], 'apache': apache}
+             'reason': wanted[k]}
         print('%s: TARGET %s' % (tag, json.dumps(t)))
         targets.append(t)
 
@@ -281,8 +279,9 @@ def report():
             print('updated #%d %s' % (i['number'], attention))
 
     for b in blocked:
-        title = 'ThingsBoard %s is not Apache-2.0 licensed — not built automatically' % b['tag']
-        if find(title):  # open or closed: a human already saw it
+        title = 'ThingsBoard %s is not Apache-2.0 (BUSL) — not built; decision needed' % b['tag']
+        if find(title):  # open or closed: one issue per release, a human already saw it
+            print('%s: license issue already exists' % b['tag'])
             continue
         create(title, (
             'The weekly job selected %s (%s), but its LICENSE starts with:\n\n> %s\n\n'
@@ -291,9 +290,11 @@ def report():
             'remain visible and unmodified and a (free) license key, and caps commercial use at '
             '100 devices on one server; the SolarBot image replaces that branding. Read the full '
             'LICENSE at https://github.com/%s/blob/%s/LICENSE before deciding.\n\n'
-            'To build it anyway (e.g. with a commercial license), add `%s` to the repository '
-            'variable `SOLARBOT_ALLOW_NON_APACHE` (space-separated) and run the weekly workflow. '
-            'First seen in %s.' % (b['tag'], b['reason'], b['license_head'], UPSTREAM, b['tag'], b['tag'], run_url)))
+            'Note also that the 4.4 installer converts a CE database to the new licensed edition. '
+            'The weekly job will not build this release; building it would need a deliberate '
+            'change to solarbot/weekly.py after a licensing decision. Weekly builds of Apache-2.0 '
+            'releases (the 4.3.1.x line) continue. First seen in %s.' % (
+                b['tag'], b['reason'], b['license_head'], UPSTREAM, b['tag'], run_url)))
 
     if failed:
         print('%d target(s) not published' % failed)

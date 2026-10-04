@@ -69,7 +69,7 @@ gets its image the day before, with a day to fix a failed port.
    GHCR. Targets: the newest release if it is newer than every image, and the
    newest patch of the line (first three components) of every
    `solarbot/v*` branch; minus anything that already has an image.
-   Releases whose `LICENSE` is not Apache-2.0 are **held back** (see below).
+   Releases whose `LICENSE` is not Apache-2.0 are never built (see below).
 2. **port**: `solarbot/v<tag>` = upstream tag + cherry-pick of
    `git rev-list <prev upstream tag>..solarbot/v<prev>`, where `prev` is the
    newest earlier solarbot branch that has an image. Commits touching only
@@ -94,13 +94,15 @@ production grant requires the ThingsBoard name, logo and "Powered by
 ThingsBoard" attribution to stay visible and unmodified and a license key, and
 caps commercial use at 100 devices on one server. A rebranded 4.4 image is
 therefore not something to run in production without a commercial license.
-The weekly job does not build such a release; it opens the issue "ThingsBoard
-vX is not Apache-2.0 licensed — not built automatically" once. To build one
-anyway, add the upstream tag to the repository variable
-`SOLARBOT_ALLOW_NON_APACHE` (space-separated, e.g. `v4.4`) and run the weekly
-workflow. The 4.4 port also needs real work (see the issue / handover notes):
-4.4 moved logo, title, favicon and palette into a runtime white-labeling
-service, so the 4.3 commits conflict.
+The 4.4 installer also converts a CE database to the new licensed edition.
+The weekly job builds only releases whose `LICENSE` first line says "Apache
+License". For a newer stable release under another license it builds
+nothing and opens one issue, "ThingsBoard vX is not Apache-2.0 (BUSL) — not
+built; decision needed". There is no switch to override this: building a
+non-Apache release would be a deliberate change to `solarbot/weekly.py` after
+a licensing decision. A 4.4 port would also need real rework: 4.4 moved the
+logo, title, favicon and palette into a runtime white-labeling service
+(gated by the license plan there), so the 4.3 commits conflict.
 
 ### Pushing with GITHUB_TOKEN
 
