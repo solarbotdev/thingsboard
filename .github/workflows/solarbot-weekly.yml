@@ -1,0 +1,197 @@
+#
+# SolarBot weekly: keep ghcr.io/solarbotdev/tb-node images coming for new
+# stable ThingsBoard releases.
+#
+#   plan    solarbot/weekly.py plan: upstream releases (non-draft,
+#           non-prerelease, ^v\d+(\.\d+){1,3}$) vs. existing image tags.
+#           Targets: the newest release if newer than every image, and the
+#           newest patch of the line of every solarbot/v* branch, minus what
+#           already has an image. Non-Apache releases (4.4+, BUSL-1.1) are
+#           held back for a human (issue) unless listed in the repository
+#           variable SOLARBOT_ALLOW_NON_APACHE.
+#   port    per target: solarbot/v<tag> from the upstream tag + cherry-pick of
+#           `git rev-list <prev upstream tag>..solarbot/v<prev>` (commits that
+#           only touch .github/ skipped); push the branch. An existing branch
+#           (earlier run, or hand-fixed) is reused after checking its base.
+#   build   per target: the reusable solarbot-build.yml, which publishes
+#           <version>-solarbot.1 and creates git tag v<version>-solarbot.1
+#           only after the smoke tests pass.
+#   report  solarbot/weekly.py report: issue per failure (one per version,
+#           updated, never duplicated), "image ready - manual upgrade" for a
+#           new minor/major line, license issue for held-back releases.
+#
+# Idempotent: a target with an image is never selected again; a failed one is
+# retried next week (its issue gets a comment).
+#
+# Schedule: Saturday 06:00 UTC. The VPS's own update cron runs Sunday 04:47
+# UTC, so a release published Monday-Friday is built ~23 h before the VPS
+# looks, with Saturday left to hand-fix a failed port and re-run this by hand
+# (workflow_dispatch) before Sunday. A Monday run would leave the image idle
+# for six days.
+#
+name: SolarBot weekly
+
+on:
+  schedule:
+    - cron: '0 6 * * 6'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push solarbot/v* branches, git tags (in the build)
+  packages: write   # the build pushes the image
+  issues: write
+  actions: write    # read this run's jobs for the report; keep the schedule enabled
+
+concurrency:
+  group: solarbot-weekly
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+      blocked: ${{ steps.plan.outputs.blocked }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOLARBOT_ALLOW_NON_APACHE: ${{ vars.SOLARBOT_ALLOW_NON_APACHE }}
+        run: python3 solarbot/weekly.py plan
+
+  port:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    name: port ${{ matrix.t.tag }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        t: ${{ fromJSON(needs.plan.outputs.targets) }}
+    env:
+      TAG: ${{ matrix.t.tag }}
+      VERSION: ${{ matrix.t.version }}
+      BRANCH: ${{ matrix.t.branch }}
+      PREV_BRANCH: ${{ matrix.t.prev_branch }}
+      PREV_TAG: ${{ matrix.t.prev_tag }}
+      # GITHUB_TOKEN may not push commits that create or change workflow
+      # files. Upstream release history can contain such commits; if that push
+      # is refused, store a fine-grained token (this repo: Contents + Workflows
+      # read/write) as secret SOLARBOT_PUSH_TOKEN.
+      PUSH_TOKEN: ${{ secrets.SOLARBOT_PUSH_TOKEN || github.token }}
+    steps:
+      - name: Port ${{ matrix.t.prev_branch }} onto ${{ matrix.t.tag }}
+        run: |
+          set -euo pipefail
+          die() { echo "::error::$*"; exit 1; }
+          git init -q port && cd port
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git remote add upstream https://github.com/thingsboard/thingsboard.git
+
+          if git ls-remote --exit-code origin "refs/heads/${BRANCH}" >/dev/null; then
+            # Left by an earlier run whose build failed, or pushed by a human
+            # who hand-fixed a conflict: build it as is, if it sits on the tag.
+            git fetch -q --depth=300 origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+            git fetch -q --depth=1 upstream "refs/tags/${TAG}:refs/tags/${TAG}"
+            git merge-base --is-ancestor "${TAG}" "origin/${BRANCH}" \
+              || die "${BRANCH} exists but is not based on upstream ${TAG}"
+            echo "${BRANCH} exists on ${TAG}: $(git rev-list --count "${TAG}..origin/${BRANCH}") commit(s) on top; reused" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Source range. The branch is fetched first and deep enough to
+          # reach its upstream tag; fetching the tag afterwards then only
+          # marks the tag commit as the shallow boundary.
+          git fetch -q --depth=100 origin "refs/heads/${PREV_BRANCH}:refs/remotes/origin/${PREV_BRANCH}"
+          git fetch -q --depth=1 upstream "refs/tags/${PREV_TAG}:refs/tags/${PREV_TAG}" "refs/tags/${TAG}:refs/tags/${TAG}"
+          # Without this a shallow history would make rev-list return every
+          # fetched commit, upstream's included.
+          git merge-base --is-ancestor "${PREV_TAG}" "origin/${PREV_BRANCH}" \
+            || die "${PREV_BRANCH} is not based on ${PREV_TAG} (or has more than 100 commits on top)"
+          [ "$(git rev-list --count --merges "${PREV_TAG}..origin/${PREV_BRANCH}")" = 0 ] \
+            || die "${PREV_BRANCH} has merge commits on top of ${PREV_TAG}; port by hand"
+          mapfile -t commits < <(git rev-list --reverse "${PREV_TAG}..origin/${PREV_BRANCH}")
+          [ "${#commits[@]}" -gt 0 ] || die "nothing between ${PREV_TAG} and ${PREV_BRANCH}"
+          echo "porting ${#commits[@]} commit(s) of ${PREV_BRANCH} onto ${TAG}"
+
+          git checkout -q -b "${BRANCH}" "${TAG}^{commit}"
+          for c in "${commits[@]}"; do
+            subject="$(git log -1 --format=%s "$c")"
+            files="$(git diff-tree --no-commit-id --name-only -r "$c")"
+            if ! grep -qv '^\.github/' <<<"$files"; then
+              echo "skip ${c::10} ${subject} (only .github/)"; continue
+            fi
+            # Workflow files stay off version branches (see PUSH_TOKEN above).
+            ! grep -q '^\.github/' <<<"$files" || die "${c::10} ${subject} mixes .github/ with other files"
+            if git cherry-pick "$c" >/dev/null 2>&1; then
+              echo "pick ${c::10} ${subject}"
+            elif [ -z "$(git diff --name-only --diff-filter=U)" ] && git diff --cached --quiet; then
+              echo "skip ${c::10} ${subject} (already upstream: empty)"; git cherry-pick --skip
+            else
+              {
+                echo "### Cherry-pick conflict porting ${PREV_BRANCH} onto ${TAG}"
+                echo "Commit \`${c::10}\` ${subject}; conflicted files:"
+                git diff --name-only --diff-filter=U | sed 's/^/- /'
+              } | tee -a "$GITHUB_STEP_SUMMARY"
+              die "cherry-pick of ${c::10} (${subject}) conflicts"
+            fi
+          done
+
+          # The port changes no workflow and is the version the build expects.
+          ! git diff --name-only "${TAG}" HEAD | grep -q '^\.github/' || die "port touches .github/"
+          [ "$(python3 -c 'import json;print(json.load(open("ui-ngx/package.json"))["version"])')" = "${VERSION}" ] \
+            || die "ui-ngx/package.json is not ${VERSION}"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          echo "pushed ${BRANCH} = $(git rev-parse HEAD) ($(git rev-list --count "${TAG}..HEAD") commit(s) on ${TAG})" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: [plan, port]
+    # Also after a failed port leg: each leg builds its own branch, and one
+    # that was not pushed fails at checkout, which the report turns into an issue.
+    if: always() && needs.plan.outputs.any == 'true'
+    name: build ${{ matrix.t.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        t: ${{ fromJSON(needs.plan.outputs.targets) }}
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/solarbot-build.yml
+    with:
+      ref: ${{ matrix.t.branch }}
+      image_tag: ${{ matrix.t.image_tag }}
+
+  report:
+    needs: [plan, port, build]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGETS: ${{ needs.plan.outputs.targets }}
+          BLOCKED: ${{ needs.plan.outputs.blocked }}
+        run: python3 solarbot/weekly.py report
+      - name: Keep the schedule enabled
+        # GitHub disables scheduled workflows of a public repo after 60 days
+        # without repository activity; re-enabling through the API each run
+        # keeps a quiet fork's weekly job alive.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/solarbot-weekly.yml/enable" || true
