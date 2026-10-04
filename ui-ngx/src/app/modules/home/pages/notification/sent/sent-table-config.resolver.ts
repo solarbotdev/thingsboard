@@ -135,7 +135,7 @@ export class SentTableConfigResolver  {
     let backgroundColor = 'rgba(25, 128, 56, 0.08)';
     switch (status) {
       case NotificationRequestStatus.SCHEDULED:
-        backgroundColor = 'rgba(48, 86, 128, 0.08)';
+        backgroundColor = 'rgba(35, 31, 32, 0.08)';
         break;
       case NotificationRequestStatus.PROCESSING:
         backgroundColor = 'rgba(212, 125, 24, 0.08)';
@@ -168,7 +168,7 @@ export class SentTableConfigResolver  {
     };
     switch (status) {
       case NotificationRequestStatus.SCHEDULED:
-        styleObj.color = '#305680';
+        styleObj.color = '#231f20';
         break;
       case NotificationRequestStatus.PROCESSING:
         styleObj.color = '#D47D18';
