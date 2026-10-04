@@ -35,6 +35,14 @@ on:
   schedule:
     - cron: '0 6 * * 6'
   workflow_dispatch:
+    inputs:
+      push_test:
+        description: >-
+          Only test the push credential: push a throwaway branch
+          solarbot/pushkey-test whose history includes upstream workflow
+          commits, then delete it. No plan, no tag, no build.
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # push solarbot/v* branches, git tags (in the build)
@@ -48,6 +56,7 @@ concurrency:
 
 jobs:
   plan:
+    if: ${{ !inputs.push_test }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -80,11 +89,18 @@ jobs:
       PREV_BRANCH: ${{ matrix.t.prev_branch }}
       PREV_TAG: ${{ matrix.t.prev_tag }}
       # GITHUB_TOKEN may not push commits that create or change workflow
-      # files. Upstream release history can contain such commits; if that push
-      # is refused, store a fine-grained token (this repo: Contents + Workflows
-      # read/write) as secret SOLARBOT_PUSH_TOKEN.
+      # files, and upstream release history contains such commits. Push
+      # credential, first that is set: SOLARBOT_PUSH_KEY (write deploy key,
+      # over SSH; not subject to that rule), SOLARBOT_PUSH_TOKEN (fine-grained
+      # PAT, Contents + Workflows), else GITHUB_TOKEN. Tags and API calls stay
+      # on GITHUB_TOKEN. See solarbot/README.md.
+      PUSH_KEY: ${{ secrets.SOLARBOT_PUSH_KEY }}
       PUSH_TOKEN: ${{ secrets.SOLARBOT_PUSH_TOKEN || github.token }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ci
+          persist-credentials: false
       - name: Port ${{ matrix.t.prev_branch }} onto ${{ matrix.t.tag }}
         run: |
           set -euo pipefail
@@ -94,6 +110,9 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git remote add origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git remote add upstream https://github.com/thingsboard/thingsboard.git
+          . "${GITHUB_WORKSPACE}/ci/solarbot/push-auth.sh"
+          trap push_auth_cleanup EXIT
+          push_auth_setup
 
           if git ls-remote --exit-code origin "refs/heads/${BRANCH}" >/dev/null; then
             # Left by an earlier run whose build failed, or pushed by a human
@@ -153,15 +172,83 @@ jobs:
             if grep -q 'without `workflows` permission' push.log; then
               {
                 echo "### Push of ${BRANCH} refused: upstream ${TAG}'s own history changes workflow files"
-                echo "The cherry-picks applied cleanly. Either store a token with Workflows write as secret"
-                echo "SOLARBOT_PUSH_TOKEN, or push the same port by hand (solarbot/README.md, \"Hand-fixing a port\")"
+                echo "The cherry-picks applied cleanly. Either set the deploy-key secret SOLARBOT_PUSH_KEY"
+                echo "(or a token with Workflows write as SOLARBOT_PUSH_TOKEN), or push the same port by hand (solarbot/README.md, \"Hand-fixing a port\")"
                 echo "and re-run this workflow: it reuses an existing branch."
               } | tee -a "$GITHUB_STEP_SUMMARY"
             fi
             die "push of ${BRANCH} failed"
           fi
-          echo "pushed ${BRANCH} = $(git rev-parse HEAD) ($(git rev-list --count "${TAG}..HEAD") commit(s) on ${TAG})" \
+          echo "pushed ${BRANCH} = $(git rev-parse HEAD) ($(git rev-list --count "${TAG}..HEAD") commit(s) on ${TAG}) via ${PUSH_MODE}" \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+  pushtest:
+    if: ${{ inputs.push_test }}
+    name: push credential test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TEST_BRANCH: solarbot/pushkey-test
+      PUSH_KEY: ${{ secrets.SOLARBOT_PUSH_KEY }}
+      PUSH_TOKEN: ${{ secrets.SOLARBOT_PUSH_TOKEN || github.token }}
+      GH_CONTRAST_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ci
+          persist-credentials: false
+      - name: Push a branch with upstream workflow history, then delete it
+        run: |
+          set -euo pipefail
+          die() { echo "::error::$*"; exit 1; }
+          [ "${TEST_BRANCH}" = solarbot/pushkey-test ] || die "unexpected test branch"
+          git init -q t && cd t
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          . "${GITHUB_WORKSPACE}/ci/solarbot/push-auth.sh"
+          cleanup() {
+            # Always remove the test branch, then the key.
+            if git ls-remote --exit-code origin "refs/heads/${TEST_BRANCH}" >/dev/null 2>&1; then
+              git push origin --delete "${TEST_BRANCH}" || echo "::warning::could not delete ${TEST_BRANCH}"
+            fi
+            push_auth_cleanup
+          }
+          trap cleanup EXIT
+          push_auth_setup
+
+          # Full history of the existing remote branches, so that only the
+          # missing upstream commits are fetched and pushed.
+          git fetch -q --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          cand=""
+          for t in v4.3.1.5 v4.2.2.6 v4.2.2.5 v4.2.2.4; do
+            git fetch -q --no-tags https://github.com/thingsboard/thingsboard.git "refs/tags/${t}:refs/tags/${t}"
+            n="$(git rev-list --count "${t}" --not --remotes=origin -- .github/workflows)"
+            echo "${t}: ${n} workflow-touching commit(s) absent from origin"
+            if [ "$n" -gt 0 ]; then cand="$t"; break; fi
+          done
+          [ -n "$cand" ] || die "no candidate tag has workflow commits absent from origin"
+          echo "test tag ${cand}: $(git rev-list --count "${cand}" --not --remotes=origin) commit(s) to push"
+
+          if git ls-remote --exit-code origin "refs/heads/${TEST_BRANCH}" >/dev/null 2>&1; then
+            die "${TEST_BRANCH} already exists on origin; remove it first"
+          fi
+
+          # Contrast: GITHUB_TOKEN over HTTPS is expected to be refused.
+          echo "--- contrast: HTTPS with GITHUB_TOKEN (expected: refused) ---"
+          git push "https://x-access-token:${GH_CONTRAST_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "refs/tags/${cand}:refs/heads/${TEST_BRANCH}" || echo "(refused, as expected)"
+          if git ls-remote --exit-code origin "refs/heads/${TEST_BRANCH}" >/dev/null 2>&1; then
+            echo "::warning::GITHUB_TOKEN push was NOT refused; removing the branch before the real test"
+            git push origin --delete "${TEST_BRANCH}"
+          fi
+
+          echo "--- push with the configured credential (${PUSH_MODE}) ---"
+          git push origin "refs/tags/${cand}:refs/heads/${TEST_BRANCH}" \
+            || die "push with the ${PUSH_MODE} credential failed"
+          echo "push OK via ${PUSH_MODE}: ${TEST_BRANCH} = $(git rev-parse "${cand}^{commit}") (tag ${cand})" | tee -a "$GITHUB_STEP_SUMMARY"
+          git push origin --delete "${TEST_BRANCH}" || die "delete of ${TEST_BRANCH} failed"
+          echo "deleted ${TEST_BRANCH}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   build:
     needs: [plan, port]
