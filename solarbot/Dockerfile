@@ -7,17 +7,33 @@
 #
 #   docker buildx build -f solarbot/Dockerfile .        (context: repo root)
 #
-# CI (.github/workflows/solarbot-image.yml) passes TB_BASE_IMAGE pinned by
-# digest; the default tag here is for a manual build.
+# CI (.github/workflows/solarbot-build.yml on branch solarbot/main) passes
+# TB_BASE_IMAGE pinned by digest and the node/yarn versions from ui-ngx/pom.xml;
+# the defaults here are for a manual build.
 
 ARG TB_VERSION=4.3.1.4
 ARG TB_BASE_IMAGE=thingsboard/tb-node:${TB_VERSION}
+# The CI reads both from ui-ngx/pom.xml (frontend-maven-plugin nodeVersion /
+# yarnVersion, without the leading v); these defaults are for a manual build.
+ARG NODE_VERSION=22.22.2
+ARG YARN_VERSION=1.22.22
 
 # --- A: the UI, built the way ui-ngx/pom.xml builds it -----------------------
 # Node and yarn versions from the frontend-maven-plugin config in
-# ui-ngx/pom.xml (nodeVersion v22.22.2, yarnVersion v1.22.22, which this image
-# ships). The UI is plain JS/CSS, so it is built once on the build platform.
-FROM --platform=$BUILDPLATFORM node:22.22.2-bookworm AS ui
+# ui-ngx/pom.xml. The UI is plain JS/CSS, so it is built once on the build
+# platform.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-bookworm AS ui
+ARG YARN_VERSION
+# The node image ships some yarn 1.x; a UI built with another yarn than the
+# pom's could resolve the lockfile differently, so install the pom's when the
+# bundled one differs.
+RUN set -e; have="$(yarn --version)"; \
+    if [ "$have" != "${YARN_VERSION}" ]; then \
+      echo "yarn ${have} -> ${YARN_VERSION}"; \
+      rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg; \
+      npm install -g "yarn@${YARN_VERSION}"; \
+    fi; \
+    [ "$(yarn --version)" = "${YARN_VERSION}" ]
 WORKDIR /src/ui-ngx
 # Dependencies first (cached while only sources change). patches/ is needed
 # by the "prepare" script (patch-package) that yarn install runs.
