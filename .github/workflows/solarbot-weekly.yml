@@ -149,7 +149,17 @@ jobs:
           ! git diff --name-only "${TAG}" HEAD | grep -q '^\.github/' || die "port touches .github/"
           [ "$(python3 -c 'import json;print(json.load(open("ui-ngx/package.json"))["version"])')" = "${VERSION}" ] \
             || die "ui-ngx/package.json is not ${VERSION}"
-          git push origin "HEAD:refs/heads/${BRANCH}"
+          if ! git push origin "HEAD:refs/heads/${BRANCH}" 2>&1 | tee push.log || grep -q 'rejected' push.log; then
+            if grep -q 'without `workflows` permission' push.log; then
+              {
+                echo "### Push of ${BRANCH} refused: upstream ${TAG}'s own history changes workflow files"
+                echo "The cherry-picks applied cleanly. Either store a token with Workflows write as secret"
+                echo "SOLARBOT_PUSH_TOKEN, or push the same port by hand (solarbot/README.md, \"Hand-fixing a port\")"
+                echo "and re-run this workflow: it reuses an existing branch."
+              } | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+            die "push of ${BRANCH} failed"
+          fi
           echo "pushed ${BRANCH} = $(git rev-parse HEAD) ($(git rev-list --count "${TAG}..HEAD") commit(s) on ${TAG})" \
             | tee -a "$GITHUB_STEP_SUMMARY"
 
