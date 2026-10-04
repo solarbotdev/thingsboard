@@ -1,0 +1,7 @@
+# Build context for solarbot/Dockerfile (repo root): only the UI sources and
+# the overlay script. Keeps local node_modules/target out of the build.
+*
+!ui-ngx
+ui-ngx/node_modules
+ui-ngx/target
+!solarbot/overlay_ui.py
