@@ -23,26 +23,28 @@
 @include mat.elevation-classes();
 @include mat.app-background();
 
+// SolarBot primary: graphite #231f20 (base 500). 50-400 are white tints,
+// 600-900 black shades. White text on 400 and darker (16.3:1 on 500).
 $tb-mat-indigo: (
-  50: #e8eaf6,
-  100: #c5cae9,
-  200: #9fa8da,
+  50: #e9e9e9,
+  100: #cac9c9,
+  200: #a7a5a6,
   300: $tb-primary-color-light,
-  400: #5c6bc0,
+  400: #4f4c4d,
   500: $tb-primary-color,
-  600: $tb-secondary-color,
-  700: #303f9f,
-  800: #283593,
-  900: #1a237e,
+  600: #1e1a1b,
+  700: #181616,
+  800: #131112,
+  900: #0e0c0d,
   A100: $tb-hue3-color,
-  A200: #536dfe,
-  A400: #3d5afe,
-  A700: #304ffe,
+  A200: #8f8a8b,
+  A400: #5a5455,
+  A700: #3a3536,
   contrast: (
     50: rgba(black, 0.87),
     100: rgba(black, 0.87),
     200: rgba(black, 0.87),
-    300: white,
+    300: rgba(black, 0.87),
     400: white,
     500: white,
     600: white,
@@ -50,14 +52,50 @@ $tb-mat-indigo: (
     800: white,
     900: white,
     A100: rgba(black, 0.87),
-    A200: white,
+    A200: rgba(black, 0.87),
     A400: white,
     A700: white,
   )
 );
 
+// SolarBot accent: orange #f18a21 (base 500). White on it is only 2.5:1,
+// so text on 50-600 and the A shades is graphite (6.5:1 on 500); 700-900
+// are dark enough for white (>= 5.2:1).
+$tb-mat-orange: (
+  50: #fef3e9,
+  100: #fce3ca,
+  200: #f9d0a6,
+  300: #f7bb7e,
+  400: #f4a14d,
+  500: $tb-accent-color,
+  600: #d4791d,
+  700: #9f5b16,
+  800: #854c12,
+  900: #653a0e,
+  A100: #ffd2a6,
+  A200: #ffb366,
+  A400: #ff9a2e,
+  A700: #e67600,
+  contrast: (
+    50: $tb-primary-color,
+    100: $tb-primary-color,
+    200: $tb-primary-color,
+    300: $tb-primary-color,
+    400: $tb-primary-color,
+    500: $tb-primary-color,
+    600: $tb-primary-color,
+    700: white,
+    800: white,
+    900: white,
+    A100: $tb-primary-color,
+    A200: $tb-primary-color,
+    A400: $tb-primary-color,
+    A700: $tb-primary-color,
+  )
+);
+
 $tb-primary: mat.m2-define-palette($tb-mat-indigo);
-$tb-accent: mat.m2-define-palette(mat.$m2-deep-orange-palette);
+$tb-accent: mat.m2-define-palette($tb-mat-orange);
 
 $tb-mat-theme: mat.m2-define-light-theme((
   color: (
@@ -77,28 +115,30 @@ $tb-theme: map_merge($tb-mat-theme, (_mat-system: $tb-theme-system));
 $primary: mat.m2-get-color-from-palette($tb-primary);
 $accent: mat.m2-get-color-from-palette($tb-accent);
 
+// Dark theme (login pages, toolbar search): the surface (800) is graphite and
+// the highlight (500: buttons, focus) is the orange accent with graphite text.
 $tb-dark-mat-indigo: (
-  50: #e8eaf6,
-  100: #c5cae9,
-  200: #9fa8da,
-  300: #7986cb,
-  400: #5c6bc0,
+  50: #fef3e9,
+  100: #fce3ca,
+  200: #f9d0a6,
+  300: #f7bb7e,
+  400: #f4a14d,
   500: $tb-dark-primary-color,
   600: $tb-secondary-color,
-  700: #303f9f,
+  700: #4f4c4d,
   800: $tb-primary-color,
-  900: #1a237e,
+  900: #0e0c0d,
   A100: $tb-hue3-color,
-  A200: #536dfe,
-  A400: #3d5afe,
-  A700: #304ffe,
+  A200: #ffb366,
+  A400: #ff9a2e,
+  A700: #e67600,
   contrast: (
     50: rgba(black, 0.87),
     100: rgba(black, 0.87),
     200: rgba(black, 0.87),
     300: rgba(black, 0.87),
     400: rgba(black, 0.87),
-    500: map_get($tb-mat-indigo, 900),
+    500: $tb-primary-color,
     600: white,
     700: white,
     800: white,

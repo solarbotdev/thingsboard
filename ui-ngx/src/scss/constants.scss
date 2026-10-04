@@ -34,9 +34,12 @@ $mat-md-lg: "screen and (min-width: 960px) and (max-width: 1819px)";
 
 $primary-hue-3: rgb(207, 216, 220) !default;
 
-$tb-primary-color: #305680;
-$tb-secondary-color: #527dad;
-$tb-hue3-color: #a7c1de;
+// SolarBot palette: primary graphite, accent orange (see theme.scss).
+$tb-primary-color: #231f20;
+$tb-secondary-color: #4a4546;
+$tb-hue3-color: #cfcbcb;
 
-$tb-dark-primary-color: #9fa8da;
-$tb-primary-color-light: #7986cb;
+$tb-accent-color: #f18a21;
+
+$tb-dark-primary-color: $tb-accent-color;
+$tb-primary-color-light: #8a8889;

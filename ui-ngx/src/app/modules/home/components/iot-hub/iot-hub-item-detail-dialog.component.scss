@@ -602,21 +602,21 @@
   }
 }
 
-// Update button — Design: border #ff5722, text #ff5722, rounded-4, px-16 py-6
+// Update button — Design: border #f18a21, text #f18a21, rounded-4, px-16 py-6
 .dlg-update-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   padding: 6px 16px;
-  border: 1px solid #ff5722;
+  border: 1px solid #f18a21;
   border-radius: 4px;
   background: transparent;
   font-size: 14px;
   font-weight: 500;
   line-height: 20px;
   letter-spacing: 0.25px;
-  color: #ff5722;
+  color: #f18a21;
   white-space: nowrap;
   cursor: pointer;
 

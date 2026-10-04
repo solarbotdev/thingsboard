@@ -55,7 +55,7 @@
 
   .tb-hint-instruction {
     border-radius: 6px;
-    background-color: rgba(48, 86, 128, 0.04);
+    background-color: rgba(35, 31, 32, 0.04);
     padding: 6px 16px;
 
     .content {
@@ -122,7 +122,7 @@
         pre[class*=language-] {
           margin: 0;
           background: #F3F6FA;
-          border-color: #305680;
+          border-color: #231f20;
           padding-right: 38px;
           padding-bottom: 4px;
           min-height: 42px;
@@ -137,7 +137,7 @@
       button.clipboard-btn {
         right: -2px;
         p {
-          color: #305680;
+          color: #231f20;
         }
         p, div {
           background-color: #F3F6FA;
@@ -152,7 +152,7 @@
             display: block;
             width: 18px;
             height: 18px;
-            background: #305680;
+            background: #231f20;
             mask-image: url(/assets/copy-code-icon.svg);
             -webkit-mask-image: url(/assets/copy-code-icon.svg);
             mask-repeat: no-repeat;

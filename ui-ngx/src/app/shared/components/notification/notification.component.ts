@@ -163,7 +163,7 @@ export class NotificationComponent implements OnInit {
     } else if (this.notification.type === NotificationType.RULE_ENGINE_COMPONENT_LIFECYCLE_EVENT) {
       return {color: '#D12730'};
     } else if (this.notification.type === NotificationType.ENTITIES_LIMIT_INCREASE_REQUEST) {
-      return {color: '#305680'};
+      return {color: '#231f20'};
     }
     return null;
   }
